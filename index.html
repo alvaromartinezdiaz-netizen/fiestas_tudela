@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <meta name="theme-color" content="#fde047">
+    <title>¡Tudela Party!</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap');
+        body { font-family: 'Fredoka', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .party-card { background: rgba(255, 255, 255, 0.9); border: 4px solid #000; box-shadow: 8px 8px 0px #000; }
+        .party-button { border: 3px solid #000; box-shadow: 4px 4px 0px #000; transition: all 0.2s; }
+        .party-button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #000; }
+        .party-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #ambient-confetti { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-yellow-300 via-pink-400 to-purple-500 min-h-screen p-4 text-black">
+    <div id="ambient-confetti"></div>
+
+    <div id="confirmation-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeConfirmation()"></div>
+        <div class="party-card w-full max-w-xs rounded-3xl p-6 relative z-10 text-center">
+            <div class="text-4xl mb-4">🤔</div>
+            <p id="confirm-text" class="text-xl font-bold mb-6"></p>
+            <div class="flex gap-3">
+                <button onclick="closeConfirmation()" class="party-button flex-1 bg-gray-200 py-3 rounded-xl font-bold">Nah</button>
+                <button onclick="executeAction()" class="party-button flex-1 bg-yellow-400 py-3 rounded-xl font-bold">¡Dale!</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-md mx-auto min-h-screen flex flex-col pt-10">
+        <header class="mb-8">
+            <div class="flex justify-between items-center mb-2">
+                <h1 class="text-4xl font-black italic -rotate-2">Festes de Tudela!</h1>
+                <button id="lang-btn" onclick="toggleLanguage()" class="party-button bg-white px-4 py-2 rounded-full font-bold text-sm">ES</button>
+            </div>
+            <p id="date-subtitle" class="font-bold text-lg italic ml-1"></p>
+        </header>
+
+        <div id="login-ui" class="flex-1 flex flex-col justify-center">
+            <div class="party-card rounded-[2rem] p-8 text-center">
+                <h2 id="i18n-title" class="text-2xl font-bold mb-6">Reserva tu cama</h2>
+                <form onsubmit="handleLogin(event)" class="space-y-4">
+                    <input type="text" id="user-name" required class="w-full border-4 border-black rounded-xl px-4 py-4 text-lg font-bold placeholder-gray-400 focus:outline-none" placeholder="Tu nombre...">
+                    <button type="submit" id="btn-submit-login" class="party-button w-full bg-pink-500 text-white py-4 rounded-xl font-black text-xl hover:bg-pink-600">ENTRAR</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="app-ui" class="hidden flex-1 pb-10">
+            <div class="flex justify-between items-end mb-6">
+                <h2 class="text-2xl font-bold">Tria el teu lloc:</h2>
+                <span class="text-3xl"></span>
+            </div>
+            <main id="bed-list" class="space-y-4"></main>
+            <button id="btn-trigger-mattress" onclick="openConfirmation(999, 'Colchón')" class="party-button w-full mt-6 bg-white py-4 rounded-xl font-bold border-dashed border-2 border-black">🎒 Porto el meu matalàs 🎒</button>
+        </div>
+
+        <div id="already-booked-ui" class="hidden flex-1 flex flex-col justify-center items-center text-center">
+            <div class="party-card p-8 rounded-3xl">
+                <h2 id="already-booked-msg" class="text-2xl font-black mb-4 text-red-600"></h2>
+                <button onclick="goBack()" class="party-button bg-gray-200 px-6 py-3 rounded-xl font-bold">Volver</button>
+            </div>
+        </div>
+
+        <div id="victory-ui" class="hidden flex-1 flex flex-col justify-center items-center text-center">
+            <div class="text-7xl mb-4 animate-bounce">🥳</div>
+            <h2 id="victory-message" class="text-3xl font-black uppercase"></h2>
+        </div>
+
+        <footer id="footer-text" class="text-center mt-auto py-8 font-bold text-sm uppercase"></footer>
+    </div>
+
+    <script>
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyhx0O0T7cdl2Y1lPHwltHbt7UzPIEYS_zGNWP44cFR7PJ8OfBjd6Tv_Hvh5Xq60Yltwg/exec'; 
+        let listaCamasGlobal = [], nombreUsuario = "", currentLang = 'ca', pendingActionId = null;
+        
+        const translations = {
+            ca: { "title": "Reserva el teu lloc", "subtitle-date": "del 24 al 26 de juliol", "placeholder": "El teu nom...", "btn-enter": "Entrar", "btn-processing": "Processant...", "btn-back": "Tornar", "btn-reserve": "Reservar", "btn-cancel": "Cancelar", "btn-confirm": "Confirmar", "status-occupied": "Ocupat", "footer": "Fet amb ❤️ per al grup", "msg-already": "Ja tens la teva plaça!", "confirm-bed": "¿Pilles el llit?", "confirm-mattress": "¿Dormiràs al terra?", "bed-names": { "Cama 1": "Llit 1", "Cama 2": "Llit 2", "Cama 3": "Llit 3", "Cama 4": "Llit 4", "Cama 5": "Llit 5", "Cama 6": "Llit 6" } },
+            es: { "title": "Reservar", "subtitle-date": "del 24 al 26 de julio", "placeholder": "Tu nombre...", "btn-enter": "Entrar", "btn-processing": "Procesando...", "btn-back": "Volver", "btn-reserve": "Reservar", "btn-cancel": "Cancelar", "btn-confirm": "Confirmar", "status-occupied": "Ocupado", "footer": "Hecho con amor para el grupo", "msg-already": "¡Ya tienes tu plaza!", "confirm-bed": "¿Te quedas esta cama?", "confirm-mattress": "¿Te vas al suelo?", "bed-names": { "Cama 1": "Cama 1", "Cama 2": "Cama 2", "Cama 3": "Cama 3", "Cama 4": "Cama 4", "Cama 5": "Cama 5", "Cama 6": "Cama 6" } }
+        };
+
+        function setButtonsState(disabled, textKey = null) {
+            document.querySelectorAll('button').forEach(b => b.disabled = disabled);
+            document.getElementById("user-name").disabled = disabled;
+            document.body.style.cursor = disabled ? 'wait' : 'default';
+            
+            const loginBtn = document.getElementById("btn-submit-login");
+            if (disabled && textKey) loginBtn.innerText = translations[currentLang][textKey];
+            else loginBtn.innerText = translations[currentLang]["btn-enter"];
+        }
+
+        function applyLanguage() {
+            document.getElementById("i18n-title").innerText = translations[currentLang]["title"];
+            document.getElementById("date-subtitle").innerText = translations[currentLang]["subtitle-date"];
+            document.getElementById("user-name").placeholder = translations[currentLang]["placeholder"];
+            document.getElementById("footer-text").innerText = translations[currentLang]["footer"];
+            renderBeds();
+        }
+
+        function openConfirmation(id, name) {
+            if (document.getElementById("btn-trigger-mattress")?.disabled) return;
+            
+            pendingActionId = id;
+            const isMattress = (id === 999);
+            document.getElementById("confirm-text").innerText = isMattress ? translations[currentLang]["confirm-mattress"] : (translations[currentLang]["confirm-bed"] + " " + (translations[currentLang]["bed-names"][name] || name));
+            document.getElementById("confirmation-modal").classList.remove("hidden");
+        }
+
+        function closeConfirmation() { 
+            const botones = document.querySelectorAll('button');
+            if (botones[0].disabled) return;
+            
+            document.getElementById("confirmation-modal").classList.add("hidden"); 
+            pendingActionId = null; 
+        }
+
+        async function executeAction() {
+            if (!pendingActionId || !nombreUsuario) return;
+            
+            const idSeguro = pendingActionId;
+            closeConfirmation();
+            setButtonsState(true, "btn-processing");
+            
+            try {
+                const resCheck = await fetch(`${SCRIPT_URL}?action=load&_=${new Date().getTime()}`);
+                const dataCheck = await resCheck.json();
+                const yaTieneReserva = dataCheck.camas.find(b => b.user.toLowerCase() === nombreUsuario.toLowerCase());
+                
+                if (yaTieneReserva) {
+                    alert("¡Espera! Ya tienes una reserva hecha.");
+                    location.reload(); 
+                    return;
+                }
+                
+                const response = await fetch(`${SCRIPT_URL}?action=save&id=${idSeguro}&user=${encodeURIComponent(nombreUsuario)}&_=${new Date().getTime()}`);
+                const data = await response.json();
+                if (data.error) { alert("Error: " + data.error); setButtonsState(false); return; }
+
+                document.getElementById("app-ui").classList.add("hidden");
+                document.getElementById("victory-ui").classList.remove("hidden");
+                const bed = listaCamasGlobal.find(b => b.id == idSeguro);
+                const bedName = bed ? (translations[currentLang]["bed-names"][bed.name] || bed.name) : "Matalàs";
+                document.getElementById("victory-message").innerText = `${bedName.toUpperCase()} RESERVAT!`;
+                confetti({ particleCount: 400, spread: 150, origin: { y: 0.7 }, colors: ['#ff0000', '#ffff00', '#ff00ff'] });
+            } catch (err) { alert("Error de connexió."); setButtonsState(false); }
+        }
+
+        function goBack() { document.getElementById("already-booked-ui").classList.add("hidden"); document.getElementById("login-ui").classList.remove("hidden"); setButtonsState(false); }
+
+        async function handleLogin(e) {
+            if(e) e.preventDefault();
+            setButtonsState(true, "btn-processing");
+            const nameInput = document.getElementById("user-name").value.trim();
+            try {
+                const res = await fetch(`${SCRIPT_URL}?action=load&_=${new Date().getTime()}`);
+                const data = await res.json();
+                
+                const existing = data.camas.find(b => b.user.toLowerCase() === nameInput.toLowerCase());
+                
+                if (existing) {
+                    document.getElementById("login-ui").classList.add("hidden");
+                    document.getElementById("already-booked-ui").classList.remove("hidden");
+                    document.getElementById("already-booked-msg").innerText = translations[currentLang]["msg-already"];
+                } else {
+                    nombreUsuario = nameInput;
+                    listaCamasGlobal = data.camas;
+                    document.getElementById("login-ui").classList.add("hidden");
+                    document.getElementById("app-ui").classList.remove("hidden");
+                    renderBeds();
+                }
+            } catch(err) { alert("Error al carregar."); }
+            setButtonsState(false);
+        }
+
+        function renderBeds() {
+            const container = document.getElementById("bed-list");
+            container.innerHTML = "";
+            listaCamasGlobal.forEach(bed => {
+                const isOccupied = bed.user !== "";
+                const name = translations[currentLang]["bed-names"][bed.name] || bed.name;
+                const card = document.createElement("div");
+                card.className = `party-card flex items-center justify-between p-5 rounded-2xl ${isOccupied ? 'bg-gray-300' : 'bg-white'}`;
+                card.innerHTML = `
+                    <span class="font-black text-lg">${name}</span>
+                    ${isOccupied ? 
+                        `<span class="font-bold text-gray-500 uppercase">${translations[currentLang]["status-occupied"]}</span>` : 
+                        `<button onclick="openConfirmation(${bed.id}, '${bed.name}')" class="party-button bg-yellow-400 px-6 py-3 rounded-xl font-black text-sm">RESERVAR</button>`
+                    }
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function toggleLanguage() { currentLang = currentLang === 'ca' ? 'es' : 'ca'; document.getElementById("lang-btn").innerText = currentLang === 'ca' ? 'ES' : 'CA'; applyLanguage(); }
+        document.addEventListener("DOMContentLoaded", () => { applyLanguage(); });
+    </script>
+</body>
+</html>
